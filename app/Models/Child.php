@@ -32,14 +32,51 @@ class Child extends Model
     }
 
     /**
+     * Отношение к путевкам (многие ко многим со сменами)
+     */
+    public function vouchers()
+    {
+        return $this->belongsToMany(Shift::class, 'child_shift')
+                    ->withPivot([
+                        'room_number', 
+                        'questionnaire', 
+                        'medical_info', 
+                        'dietary_requirements', 
+                        'roommate_preferences'
+                    ])
+                    ->withTimestamps();
+    }
+
+    /**
      * Получить все смены, в которых участвует ребенок
      */
     public function shifts()
     {
-        return $this->hasManyThrough(Shift::class, Squad::class, 'id', 'id', 'id', 'shift_id')
-                    ->join('child_squad', 'squads.id', '=', 'child_squad.squad_id')
-                    ->where('child_squad.child_id', $this->id)
-                    ->distinct();
+        return $this->belongsToMany(Shift::class, 'child_shift')
+                    ->withPivot([
+                        'room_number', 
+                        'questionnaire', 
+                        'medical_info', 
+                        'dietary_requirements', 
+                        'roommate_preferences'
+                    ])
+                    ->withTimestamps();
+    }
+
+    /**
+     * Проверить, есть ли у ребенка путевка на указанную смену
+     */
+    public function hasVoucherForShift($shiftId)
+    {
+        return $this->shifts()->where('shift_id', $shiftId)->exists();
+    }
+
+    /**
+     * Получить путевку ребенка для указанной смены
+     */
+    public function getVoucherForShift($shiftId)
+    {
+        return $this->shifts()->where('shift_id', $shiftId)->first();
     }
 
     /**

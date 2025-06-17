@@ -995,4 +995,196 @@ class AdminController extends Controller
         return redirect()->route('admin.shifts.squads.show', [$squad->shift, $squad])
                         ->with('success', 'Отметка досрочного выезда для ребенка "' . $child->full_name . '" из отряда "' . $squad->name . '" отменена');
     }
+
+    // ========== VOUCHERS (ПУТЕВКИ) ==========
+
+    /**
+     * Показать список путевок (детей на смене)
+     */
+    public function vouchersIndex(Shift $shift)
+    {
+        $children = $shift->children()
+                          ->with(['squads' => function($query) use ($shift) {
+                              $query->where('shift_id', $shift->id);
+                          }])
+                          ->orderBy('full_name')
+                          ->paginate(20);
+
+        $totalChildren = $shift->children()->count();
+        $childrenInSquads = $shift->children()
+                                  ->whereHas('squads', function($query) use ($shift) {
+                                      $query->where('shift_id', $shift->id);
+                                  })
+                                  ->count();
+        $childrenWithoutSquads = $totalChildren - $childrenInSquads;
+
+        return view('admin.shifts.vouchers.index', compact(
+            'shift', 
+            'children', 
+            'totalChildren', 
+            'childrenInSquads', 
+            'childrenWithoutSquads'
+        ));
+    }
+
+    /**
+     * Показать форму создания путевки
+     */
+    public function voucherCreate(Shift $shift)
+    {
+        // Получаем детей, которые еще не на этой смене
+        $availableChildren = Child::whereDoesntHave('shifts', function($query) use ($shift) {
+            $query->where('shift_id', $shift->id);
+        })->orderBy('full_name')->get();
+
+        return view('admin.shifts.vouchers.create', compact('shift', 'availableChildren'));
+    }
+
+    /**
+     * Создать путевку
+     */
+    public function voucherStore(Request $request, Shift $shift)
+    {
+        $validator = Validator::make($request->all(), [
+            'child_id' => 'required|exists:children,id',
+            'room_number' => 'nullable|string|max:50',
+            'questionnaire' => 'nullable|string',
+            'medical_info' => 'nullable|string',
+            'dietary_requirements' => 'nullable|string',
+            'roommate_preferences' => 'nullable|string',
+        ], [
+            'child_id.required' => 'Выберите ребенка',
+            'child_id.exists' => 'Выбранный ребенок не найден',
+            'room_number.max' => 'Номер комнаты не должен превышать 50 символов',
+        ]);
+
+        if ($validator->fails()) {
+            return redirect()->back()
+                           ->withErrors($validator)
+                           ->withInput();
+        }
+
+        $child = Child::find($request->child_id);
+
+        // Проверяем, нет ли уже путевки для этого ребенка на эту смену
+        if ($child->hasVoucherForShift($shift->id)) {
+            return redirect()->back()
+                           ->withErrors(['child_id' => 'Ребенок уже имеет путевку на эту смену'])
+                           ->withInput();
+        }
+
+        // Создаем путевку
+        $shift->children()->attach($child->id, [
+            'room_number' => $request->room_number,
+            'questionnaire' => $request->questionnaire,
+            'medical_info' => $request->medical_info,
+            'dietary_requirements' => $request->dietary_requirements,
+            'roommate_preferences' => $request->roommate_preferences,
+        ]);
+
+        return redirect()->route('admin.shifts.vouchers.index', $shift)
+                        ->with('success', 'Путевка для ребенка "' . $child->full_name . '" создана');
+    }
+
+    /**
+     * Показать детали путевки
+     */
+    public function voucherShow(Shift $shift, Child $child)
+    {
+        // Проверяем, что ребенок на этой смене
+        if (!$child->hasVoucherForShift($shift->id)) {
+            return redirect()->route('admin.shifts.vouchers.index', $shift)
+                           ->with('error', 'Ребенок не найден на этой смене');
+        }
+
+        $voucher = $child->getVoucherForShift($shift->id);
+        $child->load(['squads' => function($query) use ($shift) {
+            $query->where('shift_id', $shift->id);
+        }]);
+
+        return view('admin.shifts.vouchers.show', compact('shift', 'child', 'voucher'));
+    }
+
+    /**
+     * Показать форму редактирования путевки
+     */
+    public function voucherEdit(Shift $shift, Child $child)
+    {
+        // Проверяем, что ребенок на этой смене
+        if (!$child->hasVoucherForShift($shift->id)) {
+            return redirect()->route('admin.shifts.vouchers.index', $shift)
+                           ->with('error', 'Ребенок не найден на этой смене');
+        }
+
+        $voucher = $child->getVoucherForShift($shift->id);
+
+        return view('admin.shifts.vouchers.edit', compact('shift', 'child', 'voucher'));
+    }
+
+    /**
+     * Обновить путевку
+     */
+    public function voucherUpdate(Request $request, Shift $shift, Child $child)
+    {
+        // Проверяем, что ребенок на этой смене
+        if (!$child->hasVoucherForShift($shift->id)) {
+            return redirect()->route('admin.shifts.vouchers.index', $shift)
+                           ->with('error', 'Ребенок не найден на этой смене');
+        }
+
+        $validator = Validator::make($request->all(), [
+            'room_number' => 'nullable|string|max:50',
+            'questionnaire' => 'nullable|string',
+            'medical_info' => 'nullable|string',
+            'dietary_requirements' => 'nullable|string',
+            'roommate_preferences' => 'nullable|string',
+        ], [
+            'room_number.max' => 'Номер комнаты не должен превышать 50 символов',
+        ]);
+
+        if ($validator->fails()) {
+            return redirect()->back()
+                           ->withErrors($validator)
+                           ->withInput();
+        }
+
+        // Обновляем данные путевки
+        $shift->children()->updateExistingPivot($child->id, [
+            'room_number' => $request->room_number,
+            'questionnaire' => $request->questionnaire,
+            'medical_info' => $request->medical_info,
+            'dietary_requirements' => $request->dietary_requirements,
+            'roommate_preferences' => $request->roommate_preferences,
+        ]);
+
+        return redirect()->route('admin.shifts.vouchers.show', [$shift, $child])
+                        ->with('success', 'Данные путевки обновлены');
+    }
+
+    /**
+     * Удалить путевку
+     */
+    public function voucherDestroy(Shift $shift, Child $child)
+    {
+        // Проверяем, что ребенок на этой смене
+        if (!$child->hasVoucherForShift($shift->id)) {
+            return redirect()->route('admin.shifts.vouchers.index', $shift)
+                           ->with('error', 'Ребенок не найден на этой смене');
+        }
+
+        // Проверяем, не состоит ли ребенок в отрядах на этой смене
+        $squadsOnShift = $child->squads()->where('shift_id', $shift->id)->count();
+        if ($squadsOnShift > 0) {
+            return redirect()->back()
+                           ->with('error', 'Нельзя удалить путевку ребенка "' . $child->full_name . '", так как он состоит в отрядах на этой смене. Сначала исключите ребенка из всех отрядов.');
+        }
+
+        $childName = $child->full_name;
+        
+        // Удаляем путевку
+        $shift->children()->detach($child->id);
+        
+        return redirect()->route('admin.shifts.vouchers.index', $shift)
+                        ->with('success', 'Путевка ребенка "' . $childName . '" удалена');
+    }
 }

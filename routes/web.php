@@ -105,6 +105,17 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->name('admin.')->group(
             Route::post('{squad}/child/{child}/early-departure', [AdminController::class, 'childMarkEarlyDeparture'])->name('child-mark-early-departure');
             Route::delete('{squad}/child/{child}/early-departure', [AdminController::class, 'childCancelEarlyDeparture'])->name('child-cancel-early-departure');
         });
+
+        // Управление путевками (детьми на смене)
+        Route::prefix('{shift}/vouchers')->name('vouchers.')->group(function () {
+            Route::get('/', [AdminController::class, 'vouchersIndex'])->name('index');
+            Route::get('create', [AdminController::class, 'voucherCreate'])->name('create');
+            Route::post('/', [AdminController::class, 'voucherStore'])->name('store');
+            Route::get('{child}', [AdminController::class, 'voucherShow'])->name('show');
+            Route::get('{child}/edit', [AdminController::class, 'voucherEdit'])->name('edit');
+            Route::put('{child}', [AdminController::class, 'voucherUpdate'])->name('update');
+            Route::delete('{child}', [AdminController::class, 'voucherDestroy'])->name('destroy');
+        });
     });
     
     // Управление детьми

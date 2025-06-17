@@ -36,6 +36,42 @@ class Shift extends Model
     }
 
     /**
+     * Получить детей смены через путевки
+     */
+    public function children()
+    {
+        return $this->belongsToMany(Child::class, 'child_shift')
+                    ->withPivot([
+                        'room_number', 
+                        'questionnaire', 
+                        'medical_info', 
+                        'dietary_requirements', 
+                        'roommate_preferences'
+                    ])
+                    ->withTimestamps();
+    }
+
+    /**
+     * Получить количество детей на смене
+     */
+    public function getChildrenCountAttribute()
+    {
+        return $this->children()->count();
+    }
+
+    /**
+     * Получить детей без отрядов на этой смене
+     */
+    public function getChildrenWithoutSquadsAttribute()
+    {
+        return $this->children()
+                    ->whereDoesntHave('squads', function($query) {
+                        $query->where('shift_id', $this->id);
+                    })
+                    ->get();
+    }
+
+    /**
      * Проверить, активна ли смена
      */
     public function isActive(): bool
